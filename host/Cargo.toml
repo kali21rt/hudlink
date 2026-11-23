@@ -1,0 +1,15 @@
+[package]
+name = "aksara-hud"
+version = "0.1.0"
+edition = "2021"
+description = "Aksara HUD daemon: streams system stats, cava and weather to an ESP32 display"
+license = "GPL-3.0-or-later"
+
+# Sengaja tanpa dependency eksternal: build cepat, binary kecil, mudah dipelajari.
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

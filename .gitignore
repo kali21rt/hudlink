@@ -1,0 +1,10 @@
+# build output
+host/target/
+firmware/.pio/
+firmware/.vscode/
+# editors / OS
+*.swp
+.DS_Store
+.idea/
+# screenshots taken locally (put the ones for the README in docs/)
+hudlink-*.png
