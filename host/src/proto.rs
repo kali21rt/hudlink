@@ -9,6 +9,11 @@ pub const T_CAVA: u8 = 0x03;
 pub const T_WEATHER: u8 = 0x04;
 pub const T_CONFIG: u8 = 0x05;
 pub const T_PAGE: u8 = 0x06;
+pub const T_THEME: u8 = 0x07;
+pub const T_LOGO: u8 = 0x08;
+pub const T_MEDIA: u8 = 0x09;
+pub const T_LYRICS: u8 = 0x0A;
+pub const T_LAYOUT: u8 = 0x0B;
 
 /// Wrap a payload into a complete frame ready to be written to the serial port.
 pub fn frame(kind: u8, payload: &[u8]) -> Vec<u8> {
@@ -46,15 +51,49 @@ impl Buf {
     /// Length-prefixed ASCII string, cut to `max` bytes.
     /// Non-ASCII characters become '?' because the ESP32 fonts are ASCII only.
     pub fn str(&mut self, s: &str, max: usize) -> &mut Self {
-        let bytes: Vec<u8> = s
-            .chars()
-            .map(|c| if c.is_ascii() && !c.is_ascii_control() { c as u8 } else { b'?' })
-            .take(max)
-            .collect();
+        let bytes: Vec<u8> = s.chars().filter_map(ascii_fold).take(max).collect();
         self.0.push(bytes.len() as u8);
         self.0.extend_from_slice(&bytes);
         self
     }
+}
+
+/// Map a char to something the ESP32's ASCII fonts can draw.
+/// Common accented Latin letters lose their accent; other scripts become '?'.
+pub fn ascii_fold(c: char) -> Option<u8> {
+    if c.is_ascii() {
+        return if c.is_ascii_control() { None } else { Some(c as u8) };
+    }
+    let r = match c {
+        'à'..='å' | 'ā' | 'ă' | 'ą' => 'a',
+        'À'..='Å' | 'Ā' => 'A',
+        'ç' | 'ć' | 'č' => 'c',
+        'Ç' | 'Ć' | 'Č' => 'C',
+        'è'..='ë' | 'ē' | 'ė' | 'ę' | 'ě' => 'e',
+        'È'..='Ë' | 'Ē' | 'Ě' => 'E',
+        'ì'..='ï' | 'ī' | 'ı' => 'i',
+        'Ì'..='Ï' | 'Ī' | 'İ' => 'I',
+        'ñ' | 'ń' | 'ň' => 'n',
+        'Ñ' | 'Ń' => 'N',
+        'ò'..='ö' | 'ø' | 'ō' | 'ő' => 'o',
+        'Ò'..='Ö' | 'Ø' | 'Ō' => 'O',
+        'ù'..='ü' | 'ū' | 'ů' | 'ű' => 'u',
+        'Ù'..='Ü' | 'Ū' => 'U',
+        'ý' | 'ÿ' => 'y',
+        'Ý' | 'Ÿ' => 'Y',
+        'š' | 'ś' | 'ş' => 's',
+        'Š' | 'Ś' | 'Ş' => 'S',
+        'ž' | 'ź' | 'ż' => 'z',
+        'Ž' | 'Ź' | 'Ż' => 'Z',
+        'ß' => 's',
+        '‘' | '’' | '´' | '`' => '\'',
+        '“' | '”' => '"',
+        '–' | '—' => '-',
+        '…' => '.',
+        '\u{a0}' => ' ',
+        _ => '?',
+    };
+    Some(r as u8)
 }
 
 #[cfg(test)]
@@ -72,9 +111,8 @@ mod tests {
     #[test]
     fn string_is_ascii_and_truncated() {
         let mut b = Buf::default();
-        b.str("Yogyakarta°", 20);
-        assert_eq!(b.0[0], 11);
-        assert_eq!(*b.0.last().unwrap(), b'?');
+        b.str("Café°", 20);
+        assert_eq!(b.0, vec![5, b'C', b'a', b'f', b'e', b'?']);
         let mut b = Buf::default();
         b.str("abcdefgh", 3);
         assert_eq!(b.0, vec![3, b'a', b'b', b'c']);

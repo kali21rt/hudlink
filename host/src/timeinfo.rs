@@ -98,9 +98,60 @@ pub fn now(tz: &mut Tz) -> LocalTime {
     from_local_epoch(utc + tz.offset())
 }
 
-pub fn payload(t: &LocalTime) -> Vec<u8> {
+const DAYS_EN: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DAYS_ID: [&str; 7] = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const MONTHS_EN: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July",
+                               "August", "September", "October", "November", "December"];
+const MONTHS_ID: [&str; 12] = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli",
+                               "Agustus", "September", "Oktober", "November", "Desember"];
+const PASARAN: [&str; 5] = ["Legi", "Pahing", "Pon", "Wage", "Kliwon"];
+
+/// strftime-like: %A %a %d %e %B %b %m %Y %y %P(pasaran) %%
+pub fn format_date(fmt: &str, t: &LocalTime, lang: &str) -> String {
+    let (days, months) = if lang == "id" { (DAYS_ID, MONTHS_ID) } else { (DAYS_EN, MONTHS_EN) };
+    let day = days[(t.wday % 7) as usize];
+    let month = months[((t.month + 11) % 12) as usize];
+    let mut out = String::new();
+    let mut chars = fmt.chars();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('A') => out.push_str(day),
+            Some('a') => out.push_str(&day[..3]),
+            Some('d') => out.push_str(&format!("{:02}", t.day)),
+            Some('e') => out.push_str(&t.day.to_string()),
+            Some('B') => out.push_str(month),
+            Some('b') => out.push_str(&month[..3]),
+            Some('m') => out.push_str(&format!("{:02}", t.month)),
+            Some('Y') => out.push_str(&t.year.to_string()),
+            Some('y') => out.push_str(&format!("{:02}", t.year % 100)),
+            Some('P') => out.push_str(PASARAN[(t.pasaran % 5) as usize]),
+            Some('%') => out.push('%'),
+            Some(other) => {
+                out.push('%');
+                out.push(other);
+            }
+            None => out.push('%'),
+        }
+    }
+    out
+}
+
+/// TIME packet: hour (already 12h-converted if needed), min, sec, ampm (0 none, 1 AM, 2 PM),
+/// then the two date lines as strings.
+pub fn payload(t: &LocalTime, h24: bool, line1: &str, line2: &str, lang: &str) -> Vec<u8> {
+    let (hour, ampm) = if h24 {
+        (t.h, 0)
+    } else {
+        let h12 = if t.h % 12 == 0 { 12 } else { t.h % 12 };
+        (h12, if t.h < 12 { 1 } else { 2 })
+    };
     let mut b = Buf::default();
-    b.u8(t.h).u8(t.m).u8(t.s).u8(t.wday).u8(t.day).u8(t.month).u16(t.year).u8(t.pasaran);
+    b.u8(hour).u8(t.m).u8(t.s).u8(ampm);
+    b.str(&format_date(line1, t, lang), 40).str(&format_date(line2, t, lang), 40);
     b.0
 }
 
@@ -132,6 +183,15 @@ mod tests {
         assert_eq!(t.wday, 1); // Senin
         let t = from_local_epoch(0);
         assert_eq!((t.year, t.month, t.day, t.wday), (1970, 1, 1, 4));
+    }
+
+    #[test]
+    fn formats() {
+        let t = from_local_epoch(epoch(2026, 11, 23) + 21 * 3600);
+        assert_eq!(format_date("%A %P, %d %B %Y", &t, "id"), "Senin Wage, 23 November 2026");
+        assert_eq!(format_date("%a %e %b", &t, "en"), "Mon 23 Nov");
+        let p = payload(&t, false, "%A", "", "en");
+        assert_eq!(&p[..4], &[9, 0, 0, 2]); // 9 PM
     }
 
     #[test]

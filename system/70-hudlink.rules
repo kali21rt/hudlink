@@ -1,0 +1,6 @@
+# hudlink: ESP32 display -> /dev/hudlink
+# install.sh fills in idVendor/idProduct from `lsusb` (CH340 = 1a86:7523, CP2102 = 10c4:ea60).
+# uaccess   = the logged-in user may open the port without sudo / dialout group
+# systemd   = creates dev-hudlink.device so the service starts/stops with the cable
+# MM ignore = keep ModemManager from sending AT commands to the ESP32
+SUBSYSTEM=="tty", ATTRS{idVendor}=="__VID__", ATTRS{idProduct}=="__PID__", SYMLINK+="hudlink", TAG+="uaccess", TAG+="systemd", ENV{ID_MM_DEVICE_IGNORE}="1"

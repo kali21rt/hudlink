@@ -1,8 +1,8 @@
 [package]
-name = "aksara-hud"
+name = "hudlink"
 version = "0.1.0"
 edition = "2021"
-description = "Aksara HUD daemon: streams system stats, cava and weather to an ESP32 display"
+description = "hudlink daemon: streams system stats, media, lyrics, cava and weather to an ESP32 display"
 license = "GPL-3.0-or-later"
 
 # Sengaja tanpa dependency eksternal: build cepat, binary kecil, mudah dipelajari.

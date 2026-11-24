@@ -1,7 +1,0 @@
-# Aksara HUD: ESP32 DevKit -> /dev/aksarahud
-# Ganti idVendor/idProduct sesuai hasil `lsusb` (install.sh mengisinya otomatis).
-#   CH340/CH340C : 1a86:7523      CP2102 : 10c4:ea60
-# uaccess   = user yang login boleh buka port tanpa sudo / grup dialout
-# systemd   = munculkan dev-aksarahud.device agar service ikut start/stop
-# MM ignore = cegah ModemManager mengirim perintah AT ke ESP32
-SUBSYSTEM=="tty", ATTRS{idVendor}=="__VID__", ATTRS{idProduct}=="__PID__", SYMLINK+="aksarahud", TAG+="uaccess", TAG+="systemd", ENV{ID_MM_DEVICE_IGNORE}="1"

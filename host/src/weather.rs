@@ -88,13 +88,39 @@ pub fn parse_forecast(json: &str, city: &str) -> Option<Weather> {
     })
 }
 
-pub fn payload(w: &Weather) -> Vec<u8> {
+/// WMO weather code -> short text.
+pub fn describe(code: u8, lang: &str) -> &'static str {
+    let id = lang == "id";
+    match code {
+        0 => if id { "Cerah" } else { "Clear" },
+        1 => if id { "Cerah berawan" } else { "Mostly clear" },
+        2 => if id { "Berawan" } else { "Partly cloudy" },
+        3 => if id { "Mendung" } else { "Overcast" },
+        45 | 48 => if id { "Berkabut" } else { "Fog" },
+        51 | 53 | 55 => if id { "Gerimis" } else { "Drizzle" },
+        56 | 57 => if id { "Gerimis beku" } else { "Freezing drizzle" },
+        61 => if id { "Hujan ringan" } else { "Light rain" },
+        63 => if id { "Hujan" } else { "Rain" },
+        65 => if id { "Hujan lebat" } else { "Heavy rain" },
+        66 | 67 => if id { "Hujan beku" } else { "Freezing rain" },
+        71..=77 => if id { "Salju" } else { "Snow" },
+        80 => if id { "Hujan lokal" } else { "Showers" },
+        81 => if id { "Hujan sedang" } else { "Rain showers" },
+        82 => if id { "Hujan deras" } else { "Heavy showers" },
+        85 | 86 => if id { "Hujan salju" } else { "Snow showers" },
+        95 => if id { "Badai petir" } else { "Thunderstorm" },
+        96 | 99 => if id { "Petir + es" } else { "Storm + hail" },
+        _ => "-",
+    }
+}
+
+pub fn payload(w: &Weather, lang: &str) -> Vec<u8> {
     let x10 = |v: f64| if v.is_finite() { (v * 10.0).round() as i16 } else { 0 };
     let mut b = Buf::default();
     b.i16(x10(w.temp)).i16(x10(w.feels)).i16(x10(w.tmax)).i16(x10(w.tmin));
     b.u8(w.humidity.round().clamp(0.0, 100.0) as u8);
     b.u16((w.wind * 10.0).round().clamp(0.0, 65535.0) as u16);
-    b.u8(w.code).u8(w.is_day).str(&w.city, 30);
+    b.u8(w.code).u8(w.is_day).str(&w.city, 30).str(describe(w.code, lang), 24);
     b.0
 }
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=hudlink (ESP32 status display)
+# starts when the display is plugged in, stops when it is unplugged
+BindsTo=dev-hudlink.device
+After=dev-hudlink.device
+
+[Service]
+ExecStart=%h/.local/bin/hudlink
+Restart=on-failure
+RestartSec=2
+Nice=5
+
+[Install]
+WantedBy=dev-hudlink.device

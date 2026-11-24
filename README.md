@@ -1,17 +1,19 @@
-# Aksara HUD
+# hudlink
 
-HUD eksternal ESP32 + TFT 2.8" untuk Fedora: jam + pasaran, cuaca, system monitor, cava.
+A small external status display for Linux: ESP32 + 2.8" SPI TFT over USB.
+Clock, weather, system monitor, task manager, cava visualizer, now playing and synced lyrics.
+Colors follow your theme (presets, distro color, or matugen), the logo comes from your distro.
 
-    firmware/   PlatformIO (C++, TFT_eSPI)  -> pio run -t upload
-    host/       daemon Rust tanpa dependency -> cargo build --release
-    system/     aturan udev + systemd user service
-    scripts/    install.sh (sekali), flash.sh (tiap update firmware)
+    firmware/   PlatformIO (C++, TFT_eSPI)     -> bash scripts/flash.sh
+    host/       Rust daemon, no dependencies    -> cargo build --release
+    system/     udev rule, systemd user service, matugen template
+    scripts/    install.sh (once), flash.sh (after firmware changes)
 
-Cepat:
-    ./scripts/flash.sh /dev/ttyUSB0   # pertama kali
-    ./scripts/install.sh
-    aksara-hud --dry-run              # cek data tanpa ESP32
-    aksara-hud next | rotate | brightness 120   # kontrol dari terminal
+Quick start:
+    bash scripts/install.sh
+    bash scripts/flash.sh
+    hudlink --dry-run
+    hudlink set theme forest
+    hudlink next
 
-Panduan lengkap ada di dokumen "Panduan Aksara HUD".
-Lisensi: GPL-3.0-or-later
+License: GPL-3.0-or-later

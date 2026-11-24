@@ -1,0 +1,4 @@
+# Add this to ~/.config/matugen/config.toml
+[templates.hudlink]
+input_path = '~/.config/matugen/templates/hudlink-colors'
+output_path = '~/.config/hudlink/colors'

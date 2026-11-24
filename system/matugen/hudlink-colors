@@ -1,0 +1,11 @@
+accent = {{colors.primary.default.hex}}
+accent2 = {{colors.tertiary.default.hex}}
+bg = {{colors.surface.default.hex}}
+surface = {{colors.surface_container.default.hex}}
+line = {{colors.outline_variant.default.hex}}
+text = {{colors.on_surface.default.hex}}
+dim = {{colors.on_surface_variant.default.hex}}
+hot = {{colors.error.default.hex}}
+grad0 = {{colors.primary_container.default.hex}}
+grad1 = {{colors.primary.default.hex}}
+grad2 = {{colors.secondary.default.hex}}
