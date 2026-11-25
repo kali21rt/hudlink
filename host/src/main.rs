@@ -15,6 +15,7 @@ mod proto;
 mod sys;
 mod theme;
 mod timeinfo;
+mod tools;
 mod weather;
 
 use std::fs::{File, OpenOptions};
@@ -31,6 +32,9 @@ use osinfo::OsInfo;
 use weather::Weather;
 
 type Port = Arc<Mutex<File>>;
+
+/// Firmware version this daemon is written for (`hudlink doctor` compares it).
+pub const FIRMWARE: &str = "2.1";
 
 /// State shared by every thread.
 pub struct Shared {

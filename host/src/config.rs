@@ -268,6 +268,64 @@ impl Config {
     }
 }
 
+/// Validate one key/value before saving it. Err holds a human-readable reason.
+pub fn check(key: &str, v: &str) -> Result<(), String> {
+    let choice = |opts: &[&str]| {
+        if opts.contains(&v) { Ok(()) } else { Err(format!("{key} must be one of: {}", opts.join(", "))) }
+    };
+    let boolean = || {
+        if ["true", "false", "yes", "no", "on", "off", "1", "0"].contains(&v) { Ok(()) } else { Err(format!("{key} must be true or false")) }
+    };
+    let range = |lo: f64, hi: f64| match v.parse::<f64>() {
+        Ok(n) if n >= lo && n <= hi => Ok(()),
+        _ => Err(format!("{key} must be a number from {lo} to {hi}")),
+    };
+    match key {
+        "theme" => {
+            let mut opts = vec!["auto", "matugen", "distro"];
+            opts.extend(crate::theme::PRESETS);
+            choice(&opts)
+        }
+        "cava_colors" => choice(&["theme", "cava"]),
+        "clock_style" => choice(&["segment", "digits", "text"]),
+        "language" => choice(&["en", "id"]),
+        "home_layout" => choice(&["dashboard", "clock", "music"]),
+        "cava_style" => choice(&["bars", "blocks", "mirror"]),
+        "cava_input" => choice(&["pulse", "pipewire", "alsa", "fifo", "sndio", "portaudio"]),
+        "rotation" => choice(&["1", "3"]),
+        "clock_24h" | "clock_seconds" | "cava" | "media" | "lyrics" | "lock_off" => boolean(),
+        "brightness" | "night_brightness" => range(10.0, 255.0),
+        "cava_bars" => range(8.0, 64.0),
+        "cava_fps" => range(10.0, 60.0),
+        "weather_minutes" => range(5.0, 1440.0),
+        "auto_page" => range(0.0, 3600.0),
+        "start_page" => range(0.0, 4.0),
+        "baud" => range(9600.0, 2_000_000.0),
+        "latitude" if v.is_empty() => Ok(()),
+        "longitude" if v.is_empty() => Ok(()),
+        "latitude" => range(-90.0, 90.0),
+        "longitude" => range(-180.0, 180.0),
+        "night_start" | "night_end" => {
+            let ok = v.split_once(':').map_or(false, |(h, m)| {
+                h.parse::<u8>().map_or(false, |h| h < 24) && m.parse::<u8>().map_or(false, |m| m < 60)
+            });
+            if ok || v.is_empty() { Ok(()) } else { Err(format!("{key} must look like 22:00")) }
+        }
+        "pages" => {
+            let list: Vec<&str> = v.split(|c| c == ',' || c == ' ').map(str::trim).filter(|s| !s.is_empty()).collect();
+            if list.is_empty() {
+                return Err("pages needs at least one page".into());
+            }
+            match list.iter().find(|p| !PAGE_NAMES.contains(p)) {
+                Some(bad) => Err(format!("unknown page \"{bad}\" (pages: {})", PAGE_NAMES.join(", "))),
+                None => Ok(()),
+            }
+        }
+        "port" | "title" | "logo" | "matugen_file" | "accent" | "date_line1" | "date_line2" | "city" | "temp_sensor" => Ok(()),
+        _ => Err(format!("unknown key \"{key}\"")),
+    }
+}
+
 /// Change (or add) one `key = value` line in the config file, keeping comments.
 pub fn set_key(key: &str, value: &str) {
     let path = Config::path();
@@ -317,5 +375,14 @@ mod tests {
         assert!(d.apply("cava_bars", "16"));
         assert!(c.cava_changed(&d));
         assert!(!d.apply("terbang", "1"));
+        assert!(check("theme", "forest").is_ok());
+        assert!(check("theme", "digits").is_err());
+        assert!(check("home_layout", "forest").is_err());
+        assert!(check("pages", "home, lyrics").is_ok());
+        assert!(check("pages", "home, nope").is_err());
+        assert!(check("cava_bars", "100").is_err());
+        assert!(check("night_start", "22:30").is_ok());
+        assert!(check("night_start", "25:00").is_err());
+        assert!(check("latitude", "").is_ok());
     }
 }

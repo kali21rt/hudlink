@@ -31,6 +31,8 @@ usage:
   hudlink reload                  re-read the config file
   hudlink screenshot [file.png]   save what the display shows (default ~/Pictures)
   hudlink status                  connection, firmware, theme, media, lyrics
+  hudlink doctor [--online]       check the whole setup and suggest fixes
+  hudlink setup                   first-run wizard (city, language, clock, theme)
   hudlink rotate                  flip the screen 180 degrees
   hudlink brightness <10-255>     backlight level
   hudlink --dry-run               print all data once, no ESP32 needed
@@ -103,7 +105,7 @@ pub fn spawn_listener(shared: Arc<Shared>) {
 
 // ---------------- CLI side ----------------
 
-fn ask_daemon(line: &str) -> Option<String> {
+pub(crate) fn ask_daemon(line: &str) -> Option<String> {
     let mut s = UnixStream::connect(socket_path()).ok()?;
     writeln!(s, "{line}").ok()?;
     let _ = s.shutdown(std::net::Shutdown::Write);
@@ -116,13 +118,8 @@ const NOT_RUNNING: &str = "the hudlink daemon is not running (plug the display i
 
 /// Validate, save, and ask the daemon to reload.
 fn set(key: &str, value: &str) -> i32 {
-    let mut probe = Config::load();
-    if !probe.apply(key, value) {
-        eprintln!("unknown key \"{key}\". See: hudlink get");
-        return 1;
-    }
-    if key == "theme" && !["auto", "matugen", "distro"].contains(&value) && !PRESETS.contains(&value) {
-        eprintln!("unknown theme \"{value}\". See: hudlink themes");
+    if let Err(e) = config::check(key, value) {
+        eprintln!("{e}");
         return 1;
     }
     config::set_key(key, value);
@@ -176,6 +173,9 @@ pub fn client(args: &[String]) -> i32 {
             }
             0
         }
+        ["doctor"] => crate::tools::doctor(false),
+        ["doctor", "--online"] => crate::tools::doctor(true),
+        ["setup"] => crate::tools::setup(),
         ["screenshot", rest @ ..] => {
             let path = match rest.first() {
                 Some(p) => {
@@ -223,7 +223,7 @@ pub fn client(args: &[String]) -> i32 {
 
 pub fn is_client_command(first: &str) -> bool {
     ["next", "prev", "page", "set", "get", "themes", "edit", "reload", "rotate", "brightness", "screenshot", "status",
-     "help", "-h", "--help"]
+     "doctor", "setup", "help", "-h", "--help"]
         .contains(&first)
 }
 

@@ -338,7 +338,7 @@ fn hwmons() -> Vec<PathBuf> {
     fs::read_dir("/sys/class/hwmon").map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default()
 }
 
-fn find_temp_sensor() -> Option<PathBuf> {
+pub(crate) fn find_temp_sensor() -> Option<PathBuf> {
     let all = hwmons();
     for want in ["coretemp", "k10temp", "zenpower", "thinkpad", "acpitz"] {
         for h in &all {
