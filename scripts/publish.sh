@@ -24,6 +24,13 @@ if git log --format='%ae' | grep -q 'hudlink@localhost'; then
 fi
 git log --format='  %h %ad %an  %s' --date=short
 
+# fill in your GitHub username in the README links
+GH_USER=$(gh api user -q .login)
+if grep -q '<your-username>\|\.\./\.\./actions' README.md; then
+  sed -i "s|<your-username>|$GH_USER|g; s|\.\./\.\./actions|https://github.com/$GH_USER/hudlink/actions|g" README.md
+  git commit -qam "README: point links to $GH_USER/hudlink"
+fi
+
 echo "==> 2/5 License"
 if [[ ! -f LICENSE ]]; then
   curl -fsSL https://www.gnu.org/licenses/gpl-3.0.txt -o LICENSE
