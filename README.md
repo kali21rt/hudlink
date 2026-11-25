@@ -124,7 +124,7 @@ Each frame is `A5 5A | type | length | payload | xor checksum`. The display redr
 
 ## How this was made
 
-hudlink started as **Aksara HUD**, a side project for my own laptop and for [Aksara OS](#), the Linux distro I am building. I wanted a small cyberdeck-style screen with cava, a task manager and lyrics, so I designed the features and the look, wired the hardware, tested every version on the real display and fixed what broke.
+hudlink started as **Aksara HUD**, a side project for my own laptop and for Aksara OS, the Linux distro I am building. I wanted a small cyberdeck-style screen with cava, a task manager and lyrics, so I designed the features and the look, wired the hardware, tested every version on the real display and fixed what broke.
 
 Most of the code was written with the help of Claude (Anthropic) as a pair programmer. I am still learning Rust, and the daemon is deliberately written without external crates so it is easy to read module by module.
 
