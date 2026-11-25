@@ -586,7 +586,19 @@ fn main() {
     spawn_weather(sh.clone());
     control::spawn_listener(sh.clone());
 
+    // Without systemd the daemon runs from login and simply waits for the display.
+    let mut waiting_logged = false;
     loop {
+        let port = sh.cfg().port;
+        if !Path::new(&port).exists() {
+            if !waiting_logged {
+                eprintln!("[hudlink] waiting for {port} ...");
+                waiting_logged = true;
+            }
+            thread::sleep(Duration::from_secs(2));
+            continue;
+        }
+        waiting_logged = false;
         if let Err(e) = run_session(&sh) {
             eprintln!("[hudlink] session ended: {e}");
         }

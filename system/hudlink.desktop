@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=hudlink
+Comment=ESP32 status display daemon
+Exec=__BIN__
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
