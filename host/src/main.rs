@@ -12,6 +12,7 @@ mod media;
 mod osinfo;
 mod png;
 mod proto;
+mod screen;
 mod sys;
 mod theme;
 mod timeinfo;
@@ -379,6 +380,8 @@ fn run_session(sh: &Arc<Shared>) -> io::Result<()> {
     let mut last_sec = u64::MAX;
     let mut seconds = 0u64;
     let mut lyrics_sig = String::new();
+    let mut lock = screen::LockWatch::new();
+    let mut sent_bright: u16 = cfg.brightness as u16; // value the display has now
     let mut media_sig = String::new();
     let result: io::Result<()> = (|| {
         loop {
@@ -392,6 +395,7 @@ fn run_session(sh: &Arc<Shared>) -> io::Result<()> {
                 cfg_ver = ver;
                 cfg = sh.cfg();
                 send(&port, proto::T_CONFIG, &[cfg.brightness, 255, cfg.rotation])?;
+                sent_bright = 999; // re-evaluate night/lock below
                 send(&port, proto::T_LAYOUT, &layout_payload(&cfg, &sh.os))?;
                 send_look(&port, &cfg, sh, &mut look, false)?;
                 sent_weather = 0; // weather text may change language
@@ -429,6 +433,11 @@ fn run_session(sh: &Arc<Shared>) -> io::Result<()> {
                 seconds += 1;
                 let t = timeinfo::now(&mut tz);
                 send(&port, proto::T_TIME, &timeinfo::payload(&t, cfg.clock_24h, &cfg.date_line1, &cfg.date_line2, &cfg.language))?;
+                let want = screen::brightness(&cfg, &t, cfg.lock_off && lock.locked()) as u16;
+                if want != sent_bright {
+                    send(&port, proto::T_CONFIG, &[want as u8, 255, cfg.rotation])?;
+                    sent_bright = want;
+                }
                 send(&port, proto::T_SYS, &sys::payload(&sysmon.sample()))?;
                 let wv = sh.weather_ver.load(Ordering::Relaxed);
                 if wv != sent_weather {

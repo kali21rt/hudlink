@@ -51,6 +51,14 @@ auto_page = 0
 rotation = 1
 brightness = 200
 
+# --- screen follows the laptop ---
+# backlight off while the session is locked (GNOME, KDE, and lockers that set logind's LockedHint)
+lock_off = true
+# dimmer at night; leave night_start empty to turn this off
+night_start = 22:00
+night_end = 06:00
+night_brightness = 80
+
 # --- cava ---
 cava = true
 cava_bars = 32
@@ -96,6 +104,10 @@ pub struct Config {
     pub auto_page: u64,
     pub rotation: u8,
     pub brightness: u8,
+    pub lock_off: bool,
+    pub night_start: String,
+    pub night_end: String,
+    pub night_brightness: u8,
     pub cava: bool,
     pub cava_bars: usize,
     pub cava_fps: u32,
@@ -186,6 +198,10 @@ impl Config {
             auto_page: 0,
             rotation: 1,
             brightness: 200,
+            lock_off: true,
+            night_start: "22:00".into(),
+            night_end: "06:00".into(),
+            night_brightness: 80,
             cava: true,
             cava_bars: 32,
             cava_fps: 30,
@@ -242,6 +258,10 @@ impl Config {
             "auto_page" => self.auto_page = v.parse().unwrap_or(0),
             "rotation" => self.rotation = if v == "3" { 3 } else { 1 },
             "brightness" => self.brightness = v.parse::<u8>().unwrap_or(200).max(10),
+            "lock_off" => self.lock_off = boolean(v),
+            "night_start" => self.night_start = v.into(),
+            "night_end" => self.night_end = v.into(),
+            "night_brightness" => self.night_brightness = v.parse::<u8>().unwrap_or(80).max(10),
             "cava" => self.cava = boolean(v),
             "cava_bars" => self.cava_bars = v.parse().unwrap_or(32).clamp(8, 64),
             "cava_fps" => self.cava_fps = v.parse().unwrap_or(30).clamp(10, 60),

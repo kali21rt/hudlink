@@ -288,7 +288,7 @@ void handlePacket(uint8_t type, const uint8_t *p, uint16_t n) {
     case T_CONFIG: {
       uint8_t b = r.u8(), sp = r.u8(), rot = r.u8();
       if (!r.ok) break;
-      brightness = b < 10 ? 10 : b;
+      brightness = b;  // 0 = off (laptop locked)
       if (!sleeping) setBacklight(brightness);
       if (sp < npages) { pageIdx = sp; showPage(pages[sp]); }
       if ((rot == 1 || rot == 3) && rot != tft.getRotation()) {
