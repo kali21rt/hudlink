@@ -222,15 +222,13 @@ void sendScreenshot() {
   int w = tft.width(), h = tft.height();
   static uint16_t row[320];
   static uint8_t out[6 + 320 * 2];
-  bool swap = tft.getSwapBytes();
-  tft.setSwapBytes(true);  // readRect then returns plain RGB565
+  // Note: readRect() returns byte-swapped RGB565; the daemon swaps it back.
   for (int y = 0; y < h; y++) {
     tft.readRect(0, y, w, 1, row);
     out[0] = y & 0xFF; out[1] = y >> 8; out[2] = w & 0xFF; out[3] = w >> 8; out[4] = h & 0xFF; out[5] = h >> 8;
     for (int x = 0; x < w; x++) { out[6 + x * 2] = row[x] & 0xFF; out[7 + x * 2] = row[x] >> 8; }
     sendFrame(R_SNAP_ROW, out, 6 + w * 2);
   }
-  tft.setSwapBytes(swap);
 }
 
 void showPage(uint8_t id) {

@@ -131,7 +131,9 @@ impl Shared {
             return;
         }
         for x in 0..w as usize {
-            s.px[y as usize * w as usize + x] = u16::from_le_bytes([p[6 + x * 2], p[7 + x * 2]]);
+            // TFT_eSPI's readRect() hands back pixels byte-swapped (the order pushRect expects)
+            // and ignores setSwapBytes(), so swap them back here.
+            s.px[y as usize * w as usize + x] = u16::from_le_bytes([p[6 + x * 2], p[7 + x * 2]]).swap_bytes();
         }
         if !s.got[y as usize] {
             s.got[y as usize] = true;
