@@ -14,6 +14,83 @@ pub const T_LOGO: u8 = 0x08;
 pub const T_MEDIA: u8 = 0x09;
 pub const T_LYRICS: u8 = 0x0A;
 pub const T_LAYOUT: u8 = 0x0B;
+pub const T_SNAP: u8 = 0x0C; // ask the display for a screenshot
+pub const T_PING: u8 = 0x0D; // ask the display to answer "READY HUDLINK <version>"
+
+// display -> host
+pub const R_SNAP_ROW: u8 = 0x80; // y u16, w u16, h u16, w pixels RGB565 LE
+
+/// What one incoming byte turned into.
+pub enum Event {
+    None,
+    Text(u8),
+    Frame(u8, Vec<u8>),
+}
+
+/// Parses frames coming back from the display. Bytes outside frames are text
+/// (the firmware prints lines like "READY HUDLINK 2.1" and "PAGE 3").
+#[derive(Default)]
+pub struct Parser {
+    state: u8,
+    kind: u8,
+    len: usize,
+    chk: u8,
+    buf: Vec<u8>,
+}
+
+impl Parser {
+    pub fn push(&mut self, b: u8) -> Event {
+        match self.state {
+            0 => {
+                if b == 0xA5 {
+                    self.state = 1;
+                    Event::None
+                } else {
+                    Event::Text(b)
+                }
+            }
+            1 => {
+                self.state = if b == 0x5A { 2 } else if b == 0xA5 { 1 } else { 0 };
+                Event::None
+            }
+            2 => {
+                self.kind = b;
+                self.chk = b;
+                self.state = 3;
+                Event::None
+            }
+            3 => {
+                self.len = b as usize;
+                self.chk ^= b;
+                self.state = 4;
+                Event::None
+            }
+            4 => {
+                self.len |= (b as usize) << 8;
+                self.chk ^= b;
+                self.buf.clear();
+                self.state = if self.len > 0 { 5 } else { 6 };
+                Event::None
+            }
+            5 => {
+                self.buf.push(b);
+                self.chk ^= b;
+                if self.buf.len() >= self.len {
+                    self.state = 6;
+                }
+                Event::None
+            }
+            _ => {
+                self.state = 0;
+                if b == self.chk {
+                    Event::Frame(self.kind, std::mem::take(&mut self.buf))
+                } else {
+                    Event::None
+                }
+            }
+        }
+    }
+}
 
 /// Wrap a payload into a complete frame ready to be written to the serial port.
 pub fn frame(kind: u8, payload: &[u8]) -> Vec<u8> {
@@ -106,6 +183,24 @@ mod tests {
         assert_eq!(&f[..5], &[0xA5, 0x5A, 0x03, 3, 0]);
         assert_eq!(&f[5..8], &[2, 10, 20]);
         assert_eq!(f[8], 0x03 ^ 3 ^ 0 ^ 2 ^ 10 ^ 20);
+    }
+
+    #[test]
+    fn parser_roundtrip_with_text_around() {
+        let mut bytes = b"READY HUDLINK 2.1\n".to_vec();
+        bytes.extend(frame(R_SNAP_ROW, &[1, 2, 3]));
+        bytes.extend(b"PAGE 3\n");
+        let mut p = Parser::default();
+        let (mut text, mut frames) = (Vec::new(), Vec::new());
+        for b in bytes {
+            match p.push(b) {
+                Event::Text(c) => text.push(c),
+                Event::Frame(k, d) => frames.push((k, d)),
+                Event::None => {}
+            }
+        }
+        assert_eq!(String::from_utf8(text).unwrap(), "READY HUDLINK 2.1\nPAGE 3\n");
+        assert_eq!(frames, vec![(R_SNAP_ROW, vec![1, 2, 3])]);
     }
 
     #[test]

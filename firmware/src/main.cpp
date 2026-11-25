@@ -1,5 +1,5 @@
 // =====================================================================
-//  hudlink firmware v2
+//  hudlink firmware v2.1
 //  ESP32 DevKit + 2.8" ILI9341 SPI 240x320
 //
 //  The Linux daemon ("hudlink") streams binary frames over USB serial.
@@ -22,6 +22,7 @@
 #define SLEEP_AFTER_MS  60000   // link down for 60 s -> backlight off
 #define USE_TOUCH       0       // 1 if your panel has a touch layer (XPT2046)
 #define ROTATION        1       // default; `hudlink rotate` changes it at runtime
+#define FW_VERSION      "2.1"
 
 TFT_eSPI tft;
 TFT_eSprite spr(&tft);
@@ -199,13 +200,45 @@ struct Rd {
   }
 };
 
-enum : uint8_t { T_TIME = 1, T_SYS, T_CAVA, T_WEATHER, T_CONFIG, T_PAGE, T_THEME, T_LOGO, T_MEDIA, T_LYRICS, T_LAYOUT };
+enum : uint8_t { T_TIME = 1, T_SYS, T_CAVA, T_WEATHER, T_CONFIG, T_PAGE, T_THEME, T_LOGO, T_MEDIA, T_LYRICS, T_LAYOUT,
+                 T_SNAP, T_PING };
+const uint8_t R_SNAP_ROW = 0x80;  // display -> host
+bool snapRequested = false;
+
+void sayReady() { Serial.println("READY HUDLINK " FW_VERSION); }
+
+// Send one frame back to the host (same format as incoming frames).
+void sendFrame(uint8_t type, const uint8_t *p, uint16_t n) {
+  uint8_t hdr[5] = {0xA5, 0x5A, type, (uint8_t)(n & 0xFF), (uint8_t)(n >> 8)};
+  uint8_t chk = type ^ hdr[3] ^ hdr[4];
+  for (uint16_t i = 0; i < n; i++) chk ^= p[i];
+  Serial.write(hdr, 5);
+  Serial.write(p, n);
+  Serial.write(chk);
+}
+
+// Read the panel's own memory (needs the SDO/MISO wire) and stream it row by row.
+void sendScreenshot() {
+  int w = tft.width(), h = tft.height();
+  static uint16_t row[320];
+  static uint8_t out[6 + 320 * 2];
+  bool swap = tft.getSwapBytes();
+  tft.setSwapBytes(true);  // readRect then returns plain RGB565
+  for (int y = 0; y < h; y++) {
+    tft.readRect(0, y, w, 1, row);
+    out[0] = y & 0xFF; out[1] = y >> 8; out[2] = w & 0xFF; out[3] = w >> 8; out[4] = h & 0xFF; out[5] = h >> 8;
+    for (int x = 0; x < w; x++) { out[6 + x * 2] = row[x] & 0xFF; out[7 + x * 2] = row[x] >> 8; }
+    sendFrame(R_SNAP_ROW, out, 6 + w * 2);
+  }
+  tft.setSwapBytes(swap);
+}
 
 void showPage(uint8_t id) {
   if (id >= PG_COUNT) return;
   curPage = id;
   for (uint8_t i = 0; i < npages; i++) if (pages[i] == id) pageIdx = i;
   pageDirty = true;
+  Serial.printf("PAGE %u\n", id);  // lets `hudlink status` know the page
 }
 
 void handlePacket(uint8_t type, const uint8_t *p, uint16_t n) {
@@ -307,6 +340,8 @@ void handlePacket(uint8_t type, const uint8_t *p, uint16_t n) {
       for (uint8_t i = 0; i < l.n; i++) r.str(l.lines[i], 91);
       if (r.ok) { L = l; lyricsDirty = true; }
     } break;
+    case T_SNAP: snapRequested = true; break;
+    case T_PING: sayReady(); break;
     case T_LAYOUT: {
       uint8_t cs = r.u8(), sec = r.u8(), hl = r.u8(), cvs = r.u8(), np = r.u8();
       uint8_t pg[PG_COUNT]; uint8_t k = 0;
@@ -820,7 +855,7 @@ void setup() {
 #endif
   drawPageStatic();
   pageDirty = false;
-  Serial.println("READY HUDLINK 2");
+  sayReady();
 }
 
 void loop() {
@@ -841,10 +876,14 @@ void loop() {
   // link state & sleep
   if (linkUp && now - lastPacketMs > LINK_TIMEOUT_MS) { linkUp = false; if (everConnected) drawLinkDot(); }
   if (!linkUp) {
-    if (now - lastReadyMs > 2000) { lastReadyMs = now; Serial.println("READY HUDLINK 2"); }
+    if (now - lastReadyMs > 2000) { lastReadyMs = now; sayReady(); }
     if (!sleeping && now - max(lastPacketMs, lastInputMs) > SLEEP_AFTER_MS) { sleeping = true; setBacklight(0); }
   }
-  if (sleeping || !everConnected) { if (pageDirty) { drawPageStatic(); pageDirty = false; } return; }
+  if (sleeping || !everConnected) {
+    if (pageDirty) { drawPageStatic(); pageDirty = false; }
+    if (snapRequested) { snapRequested = false; sendScreenshot(); }
+    return;
+  }
 
   if (pageDirty) {
     drawPageStatic();
@@ -879,4 +918,7 @@ void loop() {
       break;
   }
   timeDirty = sysDirty = weatherDirty = cavaDirty = mediaDirty = lyricsDirty = false;
+
+  // screenshot after drawing, so the picture is up to date
+  if (snapRequested) { snapRequested = false; sendScreenshot(); }
 }

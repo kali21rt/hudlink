@@ -29,6 +29,8 @@ usage:
   hudlink themes                  list color themes
   hudlink edit                    open the config in $EDITOR, then reload
   hudlink reload                  re-read the config file
+  hudlink screenshot [file.png]   save what the display shows (default ~/Pictures)
+  hudlink status                  connection, firmware, theme, media, lyrics
   hudlink rotate                  flip the screen 180 degrees
   hudlink brightness <10-255>     backlight level
   hudlink --dry-run               print all data once, no ESP32 needed
@@ -64,6 +66,8 @@ fn handle(line: &str, shared: &Shared) -> String {
             Some(id) => shared.send_page(id, &format!("page {}", PAGE_NAMES[id as usize])),
             None => format!("unknown page \"{p}\" (use: {})", PAGE_NAMES.join(", ")),
         },
+        ["screenshot", path] => shared.screenshot(path),
+        ["status"] => shared.status(),
         ["reload"] => {
             shared.reload();
             "ok: config reloaded".into()
@@ -172,7 +176,35 @@ pub fn client(args: &[String]) -> i32 {
             }
             0
         }
-        [cmd, ..] if ["next", "prev", "page", "reload"].contains(cmd) => match ask_daemon(&a.join(" ")) {
+        ["screenshot", rest @ ..] => {
+            let path = match rest.first() {
+                Some(p) => {
+                    let p = config::expand(p);
+                    if p.is_absolute() { p } else { std::env::current_dir().unwrap_or_default().join(p) }
+                }
+                None => {
+                    let dir = config::home().join("Pictures");
+                    let _ = fs::create_dir_all(&dir);
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    dir.join(format!("hudlink-{stamp}.png"))
+                }
+            };
+            println!("taking a screenshot (about 2 seconds)...");
+            match ask_daemon(&format!("screenshot {}", path.display())) {
+                Some(r) => {
+                    println!("{r}");
+                    if r.starts_with("ok") { 0 } else { 1 }
+                }
+                None => {
+                    eprintln!("{NOT_RUNNING}");
+                    1
+                }
+            }
+        }
+        [cmd, ..] if ["next", "prev", "page", "reload", "status"].contains(cmd) => match ask_daemon(&a.join(" ")) {
             Some(r) => {
                 println!("{r}");
                 if r.starts_with("ok") { 0 } else { 1 }
@@ -190,7 +222,8 @@ pub fn client(args: &[String]) -> i32 {
 }
 
 pub fn is_client_command(first: &str) -> bool {
-    ["next", "prev", "page", "set", "get", "themes", "edit", "reload", "rotate", "brightness", "help", "-h", "--help"]
+    ["next", "prev", "page", "set", "get", "themes", "edit", "reload", "rotate", "brightness", "screenshot", "status",
+     "help", "-h", "--help"]
         .contains(&first)
 }
 

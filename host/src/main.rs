@@ -10,6 +10,7 @@ mod logo;
 mod lyrics;
 mod media;
 mod osinfo;
+mod png;
 mod proto;
 mod sys;
 mod theme;
@@ -20,8 +21,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::{mpsc, Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -40,6 +41,23 @@ pub struct Shared {
     weather_ver: AtomicU64,
     media: Option<media::SharedHub>,
     port: Mutex<Option<Port>>,
+    snap: Mutex<Option<Snap>>,
+    snap_cv: Condvar,
+    firmware: Mutex<String>,
+    cur_page: AtomicU8, // 255 = unknown
+    theme_src: Mutex<String>,
+    logo_src: Mutex<String>,
+    started: Instant,
+}
+
+/// A screenshot being received row by row.
+#[derive(Default)]
+pub struct Snap {
+    w: u32,
+    h: u32,
+    px: Vec<u16>,
+    got: Vec<bool>,
+    count: u32,
 }
 
 impl Shared {
@@ -50,6 +68,111 @@ impl Shared {
     pub fn reload(&self) {
         *self.cfg.write().unwrap() = Config::load();
         self.cfg_ver.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Ask the display for its framebuffer and save it as a PNG.
+    pub fn screenshot(&self, path: &str) -> String {
+        let Some(port) = self.port.lock().unwrap().clone() else {
+            return "the display is not connected".into();
+        };
+        *self.snap.lock().unwrap() = Some(Snap::default());
+        if let Err(e) = send(&port, proto::T_SNAP, &[]) {
+            return format!("send failed: {e}");
+        }
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut guard = self.snap.lock().unwrap();
+        loop {
+            if let Some(s) = guard.as_ref() {
+                if s.h > 0 && s.count >= s.h {
+                    break;
+                }
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                *guard = None;
+                return "timed out. Needs firmware 2.1+ and the SDO (MISO) wire on D19.".into();
+            }
+            guard = self.snap_cv.wait_timeout(guard, deadline - now).unwrap().0;
+        }
+        let s = guard.take().unwrap();
+        drop(guard);
+        let uniform = s.px.iter().all(|&p| p == s.px[0]);
+        match std::fs::write(path, png::encode_rgb565(s.w, s.h, &s.px)) {
+            Ok(()) if uniform => format!("ok: saved {path} (but the image is one flat color: check the SDO/MISO wire)"),
+            Ok(()) => format!("ok: saved {path} ({}x{})", s.w, s.h),
+            Err(e) => format!("cannot write {path}: {e}"),
+        }
+    }
+
+    fn on_snap_row(&self, p: &[u8]) {
+        if p.len() < 6 {
+            return;
+        }
+        let y = u16::from_le_bytes([p[0], p[1]]) as u32;
+        let w = u16::from_le_bytes([p[2], p[3]]) as u32;
+        let h = u16::from_le_bytes([p[4], p[5]]) as u32;
+        if p.len() < 6 + w as usize * 2 || w == 0 || h == 0 || y >= h {
+            return;
+        }
+        let mut guard = self.snap.lock().unwrap();
+        let Some(s) = guard.as_mut() else { return };
+        if s.w == 0 {
+            s.w = w;
+            s.h = h;
+            s.px = vec![0; (w * h) as usize];
+            s.got = vec![false; h as usize];
+        }
+        if w != s.w || h != s.h {
+            return;
+        }
+        for x in 0..w as usize {
+            s.px[y as usize * w as usize + x] = u16::from_le_bytes([p[6 + x * 2], p[7 + x * 2]]);
+        }
+        if !s.got[y as usize] {
+            s.got[y as usize] = true;
+            s.count += 1;
+        }
+        self.snap_cv.notify_all();
+    }
+
+    pub fn status(&self) -> String {
+        let cfg = self.cfg();
+        let connected = self.port.lock().unwrap().is_some();
+        let page = self.cur_page.load(Ordering::Relaxed);
+        let mut out = vec![
+            format!("daemon     running for {} min", self.started.elapsed().as_secs() / 60),
+            format!("display    {}", if connected { format!("connected on {}", cfg.port) } else { "not connected".into() }),
+            format!("firmware   {}", { let f = self.firmware.lock().unwrap(); if f.is_empty() { "unknown".to_string() } else { f.clone() } }),
+            format!("page       {}", config::PAGE_NAMES.get(page as usize).copied().unwrap_or("unknown")),
+            format!("theme      {}", self.theme_src.lock().unwrap()),
+            format!("logo       {}", self.logo_src.lock().unwrap()),
+        ];
+        match self.weather.lock().unwrap().as_ref() {
+            Some(w) => out.push(format!("weather    {} {:.1} C, {}", w.city, w.temp, weather::describe(w.code, &cfg.language))),
+            None => out.push(format!("weather    {}", if cfg.city.is_empty() && cfg.latitude.is_none() { "off" } else { "waiting" })),
+        }
+        match &self.media {
+            None => out.push("media      off".into()),
+            Some(hub) => {
+                let hub = hub.lock().unwrap();
+                match &hub.track {
+                    Some(t) => {
+                        out.push(format!("media      {} - {} [{:.0}/{:.0}s]", t.artist, t.title, hub.position(), t.len));
+                        let l = match &hub.lyrics {
+                            media::LyricsState::Idle => "-".to_string(),
+                            media::LyricsState::Searching => "searching".to_string(),
+                            media::LyricsState::NotFound => "not found".to_string(),
+                            media::LyricsState::Found(l) if l.instrumental => "instrumental".to_string(),
+                            media::LyricsState::Found(l) if !l.synced.is_empty() => format!("synced, {} lines", l.synced.len()),
+                            media::LyricsState::Found(l) => format!("plain, {} lines", l.plain.len()),
+                        };
+                        out.push(format!("lyrics     {l}"));
+                    }
+                    None => out.push("media      nothing playing".into()),
+                }
+            }
+        }
+        out.join("\n")
     }
 
     pub fn send_page(&self, id: u8, what: &str) -> String {
@@ -114,6 +237,7 @@ fn send_look(port: &Port, cfg: &Config, sh: &Shared, look: &mut Look, force: boo
     let (pal, src) = theme::resolve(cfg, &sh.os);
     if force || look.palette.as_ref() != Some(&pal) {
         eprintln!("[hudlink] theme: {src}");
+        *sh.theme_src.lock().unwrap() = src.clone();
         send(port, proto::T_THEME, &theme::payload(&pal))?;
     }
     let logo_path = logo::find(&cfg.logo, &sh.os);
@@ -121,6 +245,7 @@ fn send_look(port: &Port, cfg: &Config, sh: &Shared, look: &mut Look, force: boo
     if force || key != look.logo_key {
         let (payload, info) = logo::payload(logo_path.as_deref(), pal.bg);
         eprintln!("[hudlink] logo: {info}");
+        *sh.logo_src.lock().unwrap() = info;
         send(port, proto::T_LOGO, &payload)?;
         look.logo_key = key;
     }
@@ -136,15 +261,17 @@ fn run_session(sh: &Arc<Shared>) -> io::Result<()> {
     let port: Port = Arc::new(Mutex::new(file.try_clone()?));
     let alive = Arc::new(AtomicBool::new(true));
 
-    // --- reader thread: wait for READY, detect unplug ---
+    // --- reader thread: READY/PAGE lines, screenshot rows, unplug detection ---
     let (ready_tx, ready_rx) = mpsc::channel::<()>();
     let reader = {
         let alive = alive.clone();
         let path = cfg0.port.clone();
+        let sh = sh.clone();
         let mut rfile = file;
         thread::spawn(move || {
-            let mut buf = [0u8; 256];
+            let mut buf = [0u8; 1024];
             let mut line = Vec::new();
+            let mut parser = proto::Parser::default();
             while alive.load(Ordering::Relaxed) {
                 match rfile.read(&mut buf) {
                     Ok(0) => {
@@ -155,13 +282,28 @@ fn run_session(sh: &Arc<Shared>) -> io::Result<()> {
                     }
                     Ok(n) => {
                         for &b in &buf[..n] {
-                            if b == b'\n' {
-                                if String::from_utf8_lossy(&line).contains("READY") {
-                                    let _ = ready_tx.send(());
+                            match parser.push(b) {
+                                proto::Event::Frame(proto::R_SNAP_ROW, p) => sh.on_snap_row(&p),
+                                proto::Event::Frame(..) | proto::Event::None => {}
+                                proto::Event::Text(b'\n') => {
+                                    let text = String::from_utf8_lossy(&line).trim().to_string();
+                                    if let Some(v) = text.strip_prefix("READY HUDLINK") {
+                                        *sh.firmware.lock().unwrap() = v.trim().to_string();
+                                        let _ = ready_tx.send(());
+                                    } else if text.starts_with("READY") {
+                                        let _ = ready_tx.send(());
+                                    } else if let Some(p) = text.strip_prefix("PAGE ") {
+                                        if let Ok(id) = p.trim().parse::<u8>() {
+                                            sh.cur_page.store(id, Ordering::Relaxed);
+                                        }
+                                    }
+                                    line.clear();
                                 }
-                                line.clear();
-                            } else if line.len() < 128 {
-                                line.push(b);
+                                proto::Event::Text(c) => {
+                                    if line.len() < 128 {
+                                        line.push(c);
+                                    }
+                                }
                             }
                         }
                     }
@@ -172,6 +314,8 @@ fn run_session(sh: &Arc<Shared>) -> io::Result<()> {
             alive.store(false, Ordering::Relaxed);
         })
     };
+    sh.cur_page.store(255, Ordering::Relaxed);
+    let _ = send(&port, proto::T_PING, &[]); // a running display answers at once; a rebooting one says READY on boot
 
     // Opening the port may reset the ESP32 (DTR/RTS). Give it time to boot.
     match ready_rx.recv_timeout(Duration::from_secs(4)) {
@@ -418,6 +562,13 @@ fn main() {
         weather_ver: AtomicU64::new(0),
         media,
         port: Mutex::new(None),
+        snap: Mutex::new(None),
+        snap_cv: Condvar::new(),
+        firmware: Mutex::new(String::new()),
+        cur_page: AtomicU8::new(255),
+        theme_src: Mutex::new("-".into()),
+        logo_src: Mutex::new("-".into()),
+        started: Instant::now(),
     });
     spawn_weather(sh.clone());
     control::spawn_listener(sh.clone());
