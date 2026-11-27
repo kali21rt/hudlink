@@ -5,6 +5,7 @@ Rust daemon on the laptop + ESP32 firmware on the display.
 
 > [!NOTE]
 > This is a hobby and learning project. 
+
 ![hudlink next to my laptop](docs/images/hero.jpg)
 
 [![CI](https://github.com/kali21rt/hudlink-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kali21rt/hudlink-rs/actions/workflows/ci.yml)
