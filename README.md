@@ -1,4 +1,4 @@
-# hudlink
+# hudlink-rs
 
 **An ESP32 with a small screen, connected to your laptop, that shows a task manager, cava and the lyrics of the song you're playing.**
 
