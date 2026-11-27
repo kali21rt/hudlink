@@ -6,7 +6,7 @@ Rust daemon on the laptop + ESP32 firmware on the display.
 
 ![hudlink next to my laptop](docs/images/hero.jpg)
 
-[![CI](https://github.com/kali21rt/hudlink/actions/workflows/ci.yml/badge.svg)](https://github.com/kali21rt/hudlink/actions/workflows/ci.yml)
+[![CI](https://github.com/kali21rt/hudlink-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/kali21rt/hudlink-rs/actions/workflows/ci.yml)
 
 ## Features
 
@@ -74,7 +74,7 @@ Tips from my own build:
 ## Installation
 
 ```bash
-git clone https://github.com/kali21rt/hudlink && cd hudlink
+git clone https://github.com/kali21rt/hudlink-rs && cd hudlink-rs
 bash scripts/install.sh      # packages, the daemon, the udev rule and autostart
 pipx install platformio      # once, to build the firmware
 bash scripts/flash.sh        # upload the firmware to the ESP32
