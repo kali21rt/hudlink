@@ -1,6 +1,8 @@
 # hudlink-rs
 
-**An ESP32 with a small screen, connected to your laptop, that shows a task manager, cava and the lyrics of the song you're playing (Project hobby).**
+**An ESP32 with a small screen, connected to your laptop, that shows a task manager, cava and the lyrics of the song you're playing.**
+> [!NOTE]
+> This is a hobby and learning project.
 
 Rust daemon on the laptop + ESP32 firmware on the display.
 
